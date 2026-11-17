@@ -1,4 +1,5 @@
 import json
+import time
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
@@ -42,6 +43,9 @@ def write_session(root: Path, session_id: str, records: list[dict]) -> Path:
     folder.mkdir(parents=True, exist_ok=True)
     path = folder / f"{session_id}.jsonl"
     path.write_text("\n".join(json.dumps(r) for r in records) + "\n", encoding="utf-8")
+    # Fork ordering breaks first_ts ties by file creation time; on Linux that is
+    # ctime, which only ticks every few ms, so keep fixture files distinguishable.
+    time.sleep(0.02)
     return path
 
 
