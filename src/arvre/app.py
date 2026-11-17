@@ -20,6 +20,7 @@ from textual.widgets.option_list import Option
 
 from arvre.cache import ScanCache
 from arvre.commands import fork_argv, new_session_argv, new_session_id, resume_argv, resume_command
+from arvre.config import claude_env
 from arvre.forks import link_forks
 from arvre.graph_view import GraphView
 from arvre.layout import build_rows, tree_members, visible_ids
@@ -100,10 +101,12 @@ class ArvreApp(App):
         state: ArvreState | None = None,
         state_path: Path | None = None,
         show_archived: bool = False,
+        claude_dir: Path | None = None,
     ) -> None:
         super().__init__()
         self.cwd = cwd
         self.root = root
+        self.claude_dir = claude_dir
         self.window_24h = window_24h
         self.all_projects = all_projects
         self.style_name = style
@@ -290,7 +293,7 @@ class ArvreApp(App):
         # Its own method so tests can replace it without a real terminal to
         # suspend into (Textual's test driver doesn't support App.suspend()).
         with self.suspend():
-            subprocess.run(argv, cwd=cwd, check=False)
+            subprocess.run(argv, cwd=cwd, env=claude_env(self.claude_dir), check=False)
 
     def open_here(self, session: Session) -> None:
         if not (self._dir_exists(session.cwd) and self._claude_available()):
@@ -318,7 +321,7 @@ class ArvreApp(App):
             self.notify("The new session has no messages yet, so it isn't shown. Press r to check again later.")
 
     def copy_command(self, session: Session) -> None:
-        command = resume_command(session)
+        command = resume_command(session, self.claude_dir)
         self.copy_to_clipboard(command)  # OSC 52: works over SSH and in most modern terminals
         clipboard = system_clipboard_command()
         if clipboard:

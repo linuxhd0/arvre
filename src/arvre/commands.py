@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import shlex
 import uuid
+from pathlib import Path
 
+from arvre.config import DEFAULT_CLAUDE_DIR
 from arvre.scanner import Session
 
 
@@ -32,6 +34,9 @@ def new_session_argv(new_id: str) -> list[str]:
     return ["claude", "--session-id", new_id]
 
 
-def resume_command(session: Session) -> str:
+def resume_command(session: Session, claude_dir: Path | None = None) -> str:
     # --resume is scoped to the project directory, so cd there first.
-    return f"cd {shlex.quote(session.cwd)} && claude --resume {session.id}"
+    prefix = ""
+    if claude_dir is not None and claude_dir != DEFAULT_CLAUDE_DIR:
+        prefix = f"CLAUDE_CONFIG_DIR={shlex.quote(str(claude_dir))} "
+    return f"cd {shlex.quote(session.cwd)} && {prefix}claude --resume {session.id}"

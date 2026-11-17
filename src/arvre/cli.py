@@ -5,14 +5,15 @@ from __future__ import annotations
 import argparse
 import os
 from datetime import datetime, timezone
+from pathlib import Path
 
 from arvre import __version__
 from arvre.app import ArvreApp
 from arvre.cache import ScanCache
+from arvre.config import projects_root, resolve_claude_dir
 from arvre.forks import link_forks
 from arvre.layout import build_rows, row_label, tree_members, visible_ids
 from arvre.progress import scan_with_progress
-from arvre.scanner import DEFAULT_ROOT
 from arvre.state import ArvreState
 from arvre.themes import THEMES
 
@@ -44,25 +45,36 @@ def main(argv: list[str] | None = None) -> None:
     parser.add_argument(
         "--no-cache", action="store_true", help="ignore the on-disk parse cache and don't update it"
     )
+    parser.add_argument(
+        "--claude-dir",
+        metavar="PATH",
+        help="Claude Code config directory to read sessions from (default: $ARVRE_CLAUDE_DIR, "
+        "then $CLAUDE_CONFIG_DIR, then ~/.claude)",
+    )
     parser.add_argument("--print", dest="print_only", action="store_true", help="print the graph as text and exit")
     args = parser.parse_args(argv)
 
     cwd = os.path.realpath(args.dir)
+    claude_dir = resolve_claude_dir(args.claude_dir)
+    root = projects_root(claude_dir)
+    if not root.is_dir():
+        parser.error(f"no Claude Code sessions found: {root} is not a directory (set --claude-dir)")
     cache = ScanCache() if args.no_cache else ScanCache.load()
 
     if args.print_only:
-        print_graph(cwd, args, cache)
+        print_graph(cwd, args, cache, root)
         return
 
     # Scanned (with a loading indicator if it's slow) before Textual takes
     # the terminal -- see arvre.progress.
-    sessions = scan_with_progress(DEFAULT_ROOT, cache)
+    sessions = scan_with_progress(root, cache)
     link_forks(sessions)
     state = ArvreState.load()
     try:
         ArvreApp(
             cwd=cwd,
-            root=DEFAULT_ROOT,
+            root=root,
+            claude_dir=claude_dir,
             window_24h=not args.all_time,
             all_projects=not args.this_dir,
             style=args.style,
@@ -78,9 +90,9 @@ def main(argv: list[str] | None = None) -> None:
         state.save()
 
 
-def print_graph(cwd: str, args: argparse.Namespace, cache: ScanCache) -> None:
+def print_graph(cwd: str, args: argparse.Namespace, cache: ScanCache, root: Path) -> None:
     now = datetime.now(timezone.utc)
-    sessions = scan_with_progress(DEFAULT_ROOT, cache)
+    sessions = scan_with_progress(root, cache)
     link_forks(sessions)
     state = ArvreState.load()
     archived_ids = state.archived_ids()

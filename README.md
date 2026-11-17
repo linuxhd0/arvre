@@ -37,6 +37,7 @@ arvre --all-time           # every session, not only the last 24 hours
 arvre --style compact      # start with the compact tree instead
 arvre --theme ocean        # start with a colour theme
 arvre --show-archived      # start with archived sessions visible too
+arvre --claude-dir ~/.claudeultra  # read sessions from another Claude config directory
 arvre --print              # print the tree as text and exit
 ```
 
@@ -69,7 +70,7 @@ The action menu offers the same actions as the keys above, plus:
 
 Claude Code doesn't record a parent link when you fork a session. A fork is a copy of its parent's messages, so arvre links each session to the earlier session that shares the most message IDs with it. The details, including the verified behavior of `f` (fork) and `n` (new session), are in [docs/forks.md](docs/forks.md) and [docs/plan-0.3.md](docs/plan-0.3.md).
 
-Session data is read from `~/.claude/projects`. This is an undocumented format, so a future Claude Code release could change it.
+Session data is read from `~/.claude/projects` by default. To use another Claude Code config directory (for example if you set `CLAUDE_CONFIG_DIR`), pass `--claude-dir PATH` or set `ARVRE_CLAUDE_DIR`; arvre also honours `$CLAUDE_CONFIG_DIR`. Precedence: flag, `ARVRE_CLAUDE_DIR`, `CLAUDE_CONFIG_DIR`, `~/.claude`. When it isn't the default, the `claude` processes arvre launches (and the copied command) get the same `CLAUDE_CONFIG_DIR`, so resume and fork find the same sessions. This is an undocumented format, so a future Claude Code release could change it.
 
 ## Performance
 
