@@ -55,13 +55,14 @@ def main(argv: list[str] | None = None) -> None:
     parser.add_argument(
         "--open-in",
         choices=list(LAUNCH_TARGETS),
-        default=os.environ.get("ARVRE_OPEN_IN") or "here",
+        default=os.environ.get("ARVRE_OPEN_IN") or None,
         help="where open / fork / new start claude: this terminal, a new tmux window, or a new tmux pane "
-        "(default: $ARVRE_OPEN_IN, then here); press o to cycle. window and pane need arvre to run inside tmux",
+        "(default: $ARVRE_OPEN_IN, then the last choice made with o, then here). "
+        "window and pane need arvre to run inside tmux",
     )
     parser.add_argument("--print", dest="print_only", action="store_true", help="print the graph as text and exit")
     args = parser.parse_args(argv)
-    if args.open_in not in LAUNCH_TARGETS:
+    if args.open_in is not None and args.open_in not in LAUNCH_TARGETS:
         parser.error(f"ARVRE_OPEN_IN must be one of {', '.join(LAUNCH_TARGETS)}, not {args.open_in!r}")
 
     cwd = os.path.realpath(args.dir)
