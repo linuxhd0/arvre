@@ -19,6 +19,8 @@ def make_app(projects_root, **kwargs):
     # Isolates any archive-state write a test triggers to this run's tmp_path,
     # never the real ~/.local/share/arvre/state.json.
     kwargs.setdefault("state_path", projects_root / "state.json")
+    # Deterministic whether or not the test run itself is inside tmux.
+    kwargs.setdefault("in_tmux", False)
     return ArvreApp(cwd=CWD, root=projects_root, **kwargs)
 
 
@@ -362,3 +364,66 @@ async def test_navigating_down_scrolls_the_view(projects_root, style):
         else:
             top, bottom = graph._index, graph._index + 1
         assert container.scroll_y <= top and bottom <= container.scroll_y + container.size.height
+
+
+def fake_launch_env(app, monkeypatch):
+    monkeypatch.setattr(app, "_dir_exists", lambda cwd: True)
+    monkeypatch.setattr(app, "_claude_available", lambda: True)
+    ran_here = []
+    tmux_calls = []
+    monkeypatch.setattr(app, "_run_claude", lambda argv, cwd: ran_here.append(argv))
+    monkeypatch.setattr(app, "_run_tmux", lambda argv: tmux_calls.append(argv) or True)
+    return ran_here, tmux_calls
+
+
+@pytest.mark.asyncio
+async def test_o_cycles_launch_targets_inside_tmux(projects_root):
+    app = make_app(projects_root, in_tmux=True)
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        assert app.launch_target == "here"
+        for expected in ["window", "pane", "here"]:
+            await pilot.press("o")
+            await pilot.pause()
+            assert app.launch_target == expected
+
+
+@pytest.mark.asyncio
+async def test_outside_tmux_launch_target_stays_here(projects_root):
+    app = make_app(projects_root, launch_target="window", in_tmux=False)
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        assert app.launch_target == "here"
+        await pilot.press("o")
+        await pilot.pause()
+        assert app.launch_target == "here"
+
+
+@pytest.mark.asyncio
+async def test_fork_in_tmux_window_hands_the_command_to_tmux(projects_root, monkeypatch):
+    app = make_app(projects_root, launch_target="window", in_tmux=True)
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        ran_here, tmux_calls = fake_launch_env(app, monkeypatch)
+        app.query_one(GraphView).select_id(ROOT)
+        await pilot.pause()
+        await pilot.press("f")
+        await pilot.pause()
+        assert ran_here == []
+        assert len(tmux_calls) == 1
+        argv = tmux_calls[0]
+        assert argv[:4] == ["tmux", "new-window", "-c", CWD]
+        assert argv[-1].startswith(f"claude --resume {ROOT} --fork-session --session-id ")
+        assert app.is_running
+
+
+@pytest.mark.asyncio
+async def test_open_in_tmux_pane_splits_the_window(projects_root, monkeypatch):
+    app = make_app(projects_root, launch_target="pane", in_tmux=True)
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        ran_here, tmux_calls = fake_launch_env(app, monkeypatch)
+        app.open_here(app.sessions[ROOT])
+        await pilot.pause()
+        assert ran_here == []
+        assert tmux_calls == [["tmux", "split-window", "-h", "-c", CWD, f"claude --resume {ROOT}"]]

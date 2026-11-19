@@ -19,7 +19,16 @@ from textual.widgets import Label, OptionList, Static
 from textual.widgets.option_list import Option
 
 from arvre.cache import ScanCache
-from arvre.commands import fork_argv, new_session_argv, new_session_id, resume_argv, resume_command
+from arvre.commands import (
+    LAUNCH_TARGETS,
+    fork_argv,
+    new_session_argv,
+    new_session_id,
+    resume_argv,
+    resume_command,
+    tmux_argv,
+    tmux_window_name,
+)
 from arvre.config import claude_env
 from arvre.forks import link_forks
 from arvre.graph_view import GraphView
@@ -29,25 +38,38 @@ from arvre.state import ArvreState
 from arvre.themes import THEME_ORDER, THEMES, Theme
 
 
+LAUNCH_TARGET_PHRASES = {
+    "here": "in this terminal",
+    "window": "in a new tmux window",
+    "pane": "in a new tmux pane",
+}
+
+
+def inside_tmux() -> bool:
+    return bool(os.environ.get("TMUX")) and shutil.which("tmux") is not None
+
+
 class ActionModal(ModalScreen[str | None]):
     """Choose what to do with a session. Dismisses with the chosen action id,
     or None if closed without choosing."""
 
     BINDINGS = [Binding("escape", "close", "Close")]
 
-    def __init__(self, session: Session, archived: bool) -> None:
+    def __init__(self, session: Session, archived: bool, launch_target: str = "here") -> None:
         super().__init__()
         self.session = session
         self.archived = archived
+        self.launch_target = launch_target
 
     def compose(self) -> ComposeResult:
+        where = LAUNCH_TARGET_PHRASES[self.launch_target]
         with Vertical(id="modal"):
             yield Label(Text(self.session.name, style="bold"), id="modal-title")
             yield Static(f"{self.session.id}\n{self.session.cwd}", id="modal-meta")
             yield OptionList(
-                Option("Open in this terminal", id="open"),
-                Option("Fork this session", id="fork"),
-                Option("New session here", id="new"),
+                Option(f"Open {where}", id="open"),
+                Option(f"Fork this session {where}", id="fork"),
+                Option(f"New session in this directory {where}", id="new"),
                 Option("Unarchive" if self.archived else "Archive", id="archive"),
                 Option("Copy command", id="copy"),
                 id="modal-actions",
@@ -86,6 +108,7 @@ class ArvreApp(App):
         Binding("n", "new_selected", "new"),
         Binding("x", "archive_selected", "archive"),
         Binding("z", "toggle_archived", "archived"),
+        Binding("o", "cycle_launch_target", "open in"),
     ]
 
     def __init__(
@@ -102,8 +125,13 @@ class ArvreApp(App):
         state_path: Path | None = None,
         show_archived: bool = False,
         claude_dir: Path | None = None,
+        launch_target: str = "here",
+        in_tmux: bool | None = None,
     ) -> None:
         super().__init__()
+        self.in_tmux = inside_tmux() if in_tmux is None else in_tmux
+        # Outside tmux there's nowhere else to open, so stay in this terminal.
+        self.launch_target = launch_target if self.in_tmux else "here"
         self.cwd = cwd
         self.root = root
         self.claude_dir = claude_dir
@@ -174,6 +202,7 @@ class ArvreApp(App):
             ("n", "new"),
             ("x", "archive"),
             ("z", "archived shown" if self.show_archived else "archived hidden"),
+            *([("o", f"open in {self.launch_target}")] if self.in_tmux else []),
         ]:
             line.append(f"{key} ", style=accent)
             line.append(f"{label}  ")
@@ -217,7 +246,7 @@ class ArvreApp(App):
             return
         session = self.sessions[event.session_id]
         archived = self.state.is_archived(session.id)
-        self.push_screen(ActionModal(session, archived), callback=partial(self.run_choice, session))
+        self.push_screen(ActionModal(session, archived, self.launch_target), callback=partial(self.run_choice, session))
 
     # --- actions ------------------------------------------------------------
 
@@ -242,6 +271,15 @@ class ArvreApp(App):
 
     def action_toggle_archived(self) -> None:
         self.show_archived = not self.show_archived
+        self.refresh_rows()
+
+    def action_cycle_launch_target(self) -> None:
+        if not self.in_tmux:
+            self.notify("Not running inside tmux, so sessions open in this terminal.", severity="warning")
+            return
+        index = LAUNCH_TARGETS.index(self.launch_target)
+        self.launch_target = LAUNCH_TARGETS[(index + 1) % len(LAUNCH_TARGETS)]
+        self.notify(f"Sessions now open {LAUNCH_TARGET_PHRASES[self.launch_target]}.")
         self.refresh_rows()
 
     def action_archive_selected(self) -> None:
@@ -295,25 +333,44 @@ class ArvreApp(App):
         with self.suspend():
             subprocess.run(argv, cwd=cwd, env=claude_env(self.claude_dir), check=False)
 
+    def _run_tmux(self, argv: list[str]) -> bool:
+        # Its own method so tests can replace it without a real tmux server.
+        result = subprocess.run(argv, capture_output=True, text=True, check=False)
+        if result.returncode != 0:
+            self.notify(f"tmux failed: {result.stderr.strip() or result.returncode}", severity="error")
+            return False
+        return True
+
+    def _launch(self, argv: list[str], session: Session, name: str) -> bool:
+        """Run claude where the launch target says. True if it ran in this
+        terminal (and has exited), False if it was handed to tmux or failed."""
+        if self.launch_target == "here":
+            self._run_claude(argv, session.cwd)
+            return True
+        command = tmux_argv(self.launch_target, argv, session.cwd, tmux_window_name(name), self.claude_dir)
+        if self._run_tmux(command):
+            self.notify(f"Started {LAUNCH_TARGET_PHRASES[self.launch_target]}. Press r to refresh the graph.")
+        return False
+
     def open_here(self, session: Session) -> None:
         if not (self._dir_exists(session.cwd) and self._claude_available()):
             return
-        self._run_claude(resume_argv(session), session.cwd)
-        self.load()
+        if self._launch(resume_argv(session), session, session.name):
+            self.load()
 
     def fork_session(self, session: Session) -> None:
         if not (self._dir_exists(session.cwd) and self._claude_available()):
             return
         new_id = new_session_id()
-        self._run_claude(fork_argv(session, new_id), session.cwd)
-        self._reload_and_select(new_id)
+        if self._launch(fork_argv(session, new_id), session, f"fork: {session.name}"):
+            self._reload_and_select(new_id)
 
     def new_session(self, session: Session) -> None:
         if not (self._dir_exists(session.cwd) and self._claude_available()):
             return
         new_id = new_session_id()
-        self._run_claude(new_session_argv(new_id), session.cwd)
-        self._reload_and_select(new_id)
+        if self._launch(new_session_argv(new_id), session, "new: " + os.path.basename(session.cwd.rstrip("/"))):
+            self._reload_and_select(new_id)
 
     def _reload_and_select(self, session_id: str) -> None:
         self.load()

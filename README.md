@@ -38,6 +38,7 @@ arvre --style compact      # start with the compact tree instead
 arvre --theme ocean        # start with a colour theme
 arvre --show-archived      # start with archived sessions visible too
 arvre --claude-dir ~/.claudeultra  # read sessions from another Claude config directory
+arvre --open-in window     # inside tmux: open / fork / new start in a new tmux window (or: pane)
 arvre --print              # print the tree as text and exit
 ```
 
@@ -58,6 +59,7 @@ Run `arvre --help` for all options.
 | `p` | Toggle this directory / all projects |
 | `v` | Toggle compact / flowchart style |
 | `t` | Cycle colour themes (`classic`, `ocean`, `forest`, `sunset`) |
+| `o` | Inside tmux: cycle where sessions open (this terminal, a new tmux window, a new tmux pane) |
 | `r` | Reload |
 | `q` / `Esc` | Quit |
 
@@ -65,6 +67,10 @@ The action menu offers the same actions as the keys above, plus:
 
 - **Open in this terminal**: runs `claude --resume <id>` in the session's directory, and returns to arvre when Claude exits.
 - **Copy command**: copies `cd '<dir>' && claude --resume <id>` to the clipboard, for pasting into another terminal.
+
+### tmux
+
+When arvre runs inside tmux, open, fork and new can start Claude in a new tmux window (named after the session) or in a new pane split beside arvre, instead of taking over arvre's terminal. arvre stays open meanwhile; press `r` to see a new or forked session once it has messages. Press `o` to cycle the target, or start with `--open-in window` / `--open-in pane` (or set `ARVRE_OPEN_IN`). Outside tmux, sessions always open in this terminal.
 
 ## How forks are detected
 
