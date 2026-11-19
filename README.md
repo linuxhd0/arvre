@@ -59,7 +59,7 @@ Run `arvre --help` for all options.
 | `v` | Toggle compact / flowchart style |
 | `t` | Cycle colour themes (`classic`, `ocean`, `forest`, `sunset`) |
 | `r` | Reload |
-| `q` | Quit |
+| `q` / `Esc` | Quit |
 
 The action menu offers the same actions as the keys above, plus:
 

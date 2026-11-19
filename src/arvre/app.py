@@ -76,7 +76,7 @@ class ArvreApp(App):
     #modal-meta, #modal-command { color: $text-muted; }
     """
     BINDINGS = [
-        Binding("q", "quit", "Quit"),
+        Binding("q,escape", "quit", "Quit"),
         Binding("r", "reload", "Reload"),
         Binding("a", "toggle_window", "24h / all"),
         Binding("p", "toggle_scope", "this dir / all"),
@@ -179,7 +179,7 @@ class ArvreApp(App):
             line.append(f"{label}  ")
         line.append("r ", style=accent)
         line.append("reload  ")
-        line.append("q ", style=accent)
+        line.append("q/esc ", style=accent)
         line.append("quit  ")
         line.append(f"· {count} sessions")
         if hidden_archived:

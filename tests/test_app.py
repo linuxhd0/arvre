@@ -86,6 +86,18 @@ async def test_enter_opens_action_modal_and_escape_closes(projects_root):
         await pilot.press("escape")
         await pilot.pause()
         assert not isinstance(app.screen, ActionModal)
+        # Escape in the modal only closes it; it must not also quit the app.
+        assert app.is_running
+
+
+@pytest.mark.asyncio
+async def test_escape_quits_from_main_screen(projects_root):
+    app = make_app(projects_root)
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        await pilot.press("escape")
+        await pilot.pause()
+        assert not app.is_running
 
 
 @pytest.mark.asyncio
